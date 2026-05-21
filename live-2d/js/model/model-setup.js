@@ -3,7 +3,26 @@ const { EmotionMotionMapper } = require('../ui/emotion-motion-mapper.js');
 const { EmotionExpressionMapper } = require('../ui/emotion-expression-mapper.js'); // 使用新的  
 const { MusicPlayer } = require('../services/music-player.js');
 
+// Live2D 鼠标追踪开关：true 为开启，false 为关闭。
+const ENABLE_LIVE2D_MOUSE_TRACKING = false;
+
 class ModelSetup {
+    static setLive2DMouseTracking(model, enabled) {
+        const focusController = model?.internalModel?.focusController;
+        if (!focusController || typeof focusController.focus !== 'function') {
+            return;
+        }
+
+        if (enabled) {
+            return;
+        }
+
+        const originalFocus = focusController.focus.bind(focusController);
+        focusController.focus = (x = 0, y = 0, instant = false) => {
+            originalFocus(0, 0, instant);
+        };
+        focusController.focus(0, 0, true);
+    }
     // 初始化PIXI应用和Live2D模型
     static async initialize(modelController, config, ttsEnabled, asrEnabled, ttsProcessor, voiceChat) {
         // 创建PIXI应用
@@ -21,6 +40,7 @@ class ModelSetup {
         // 加载Live2D模型
         const model = await PIXI.live2d.Live2DModel.from("2D/肥牛/feiniu.model3.json");
         app.stage.addChild(model);
+        ModelSetup.setLive2DMouseTracking(model, ENABLE_LIVE2D_MOUSE_TRACKING);
 
         // 根据配置控制模型显示/隐藏
         const showModel = config.ui?.show_model !== false; // 默认显示

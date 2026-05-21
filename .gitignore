@@ -1,9 +1,7 @@
 # 不忽略 .gitignore 本身
 !.gitignore
 
-
 # 忽略特定文件夹
-# live-2d/2D/*
 live-2d/AI记录室/*
 live-2d/build/
 live-2d/fake_neuro_audio/
@@ -19,17 +17,21 @@ full-hub/model
 full-hub/rag-hub
 full-hub/tts-hub
 
+# 忽略本地记录与缓存
+AI记录室/*
+backup/
+**/__pycache__/
+*.pyc
+plugins-dlc/memos/memos_system/data/memory_store.json
+plugins-dlc/memos/memos_system/data/graph_store.json
+plugins-dlc/memos/memos_system/data/images/
+plugins-dlc/memos/memos_system/data/qdrant/
 
 # 忽略所有 node_modules（无论在哪）
 **/node_modules/
 
-# 忽略可执行文件
+# 忽略可执行文件与日志
 *.exe
 *.zip
 *.log
-
-#忽略无意义文件
-
-runtime.logfull-hub/ 
-
-
+runtime.log

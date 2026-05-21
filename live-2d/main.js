@@ -9,6 +9,11 @@ const screenshot = require('screenshot-desktop');
 // 添加配置文件路径
 const configPath = path.join(app.getAppPath(), 'config.json');
 
+// OBS 窗口采集开关：
+// true  = 使用可被 OBS 窗口采集的标准透明窗口
+// false = 保持原来的桌宠式窗口行为
+const ENABLE_OBS_WINDOW_CAPTURE = true;
+
 // Live2D模型优先级配置（Python程序会修改这个列表来切换模型）
 const priorityFolders = ['肥牛', 'Hiyouri', 'Default', 'Main'];
 
@@ -22,7 +27,7 @@ function ensureTopMost(win) {
 function createWindow () {
     const primaryDisplay = screen.getPrimaryDisplay()
     const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize
-    const win = new BrowserWindow({
+    const windowOptions = {
         width: screenWidth,
         height: screenHeight,
         transparent: true,
@@ -31,7 +36,6 @@ function createWindow () {
         backgroundColor: '#00000000',
         hasShadow: false,
         focusable: true,
-        type: 'desktop',
         webPreferences: {
             nodeIntegration: true,
             contextIsolation: false,
@@ -41,11 +45,18 @@ function createWindow () {
         },
         resizable: true,
         movable: true,
-        skipTaskbar: true,
+        skipTaskbar: !ENABLE_OBS_WINDOW_CAPTURE,
         maximizable: false,
-    })
+    }
+    if (!ENABLE_OBS_WINDOW_CAPTURE) {
+        windowOptions.type = 'desktop'
+    }
+    const win = new BrowserWindow(windowOptions)
+    if (!ENABLE_OBS_WINDOW_CAPTURE) {
+        win.setIgnoreMouseEvents(true, { forward: true });
+        win.setSkipTaskbar(true)
+    }
     win.setAlwaysOnTop(true, 'screen-saver')
-    win.setIgnoreMouseEvents(true, { forward: true });
     win.setMenu(null)
     win.setPosition(0, 0)
     win.loadFile('index.html')
