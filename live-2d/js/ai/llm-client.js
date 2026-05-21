@@ -81,6 +81,8 @@ class LLMClient {
             });
 
             if (!response.ok) {
+                logToTerminal('warn', '⚠️ LLM请求失败，打印请求体以便排查');
+                console.error('LLM请求体:', JSON.stringify(requestBody, null, 2));
                 await handleAPIError(response);
             }
 
@@ -147,13 +149,16 @@ class LLMClient {
         return messages.map(msg => {
             // 🔥 处理 assistant 消息的 content 为 null 的情况
             if (msg.role === 'assistant') {
+                const sanitizedAssistant = { ...msg };
                 // 如果有 tool_calls 但 content 为 null,设为空字符串
-                if (msg.content === null && msg.tool_calls) {
-                    return {
-                        ...msg,
-                        content: '' // 某些API要求content不能为null
-                    };
+                if (sanitizedAssistant.content === null && sanitizedAssistant.tool_calls) {
+                    sanitizedAssistant.content = '';
                 }
+                // 去除历史记录中的 tool_calls 字段，避免某些后端/代理对该字段返回 400
+                if (sanitizedAssistant.tool_calls) {
+                    delete sanitizedAssistant.tool_calls;
+                }
+                return sanitizedAssistant;
             }
 
             // 🔥 处理 tool 消息,确保格式正确

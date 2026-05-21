@@ -38,7 +38,7 @@ class ModelSetup {
         app.stage.pivot.set(window.innerWidth / 2, window.innerHeight / 2);
 
         // 加载Live2D模型
-        const model = await PIXI.live2d.Live2DModel.from("2D/肥牛/feiniu.model3.json");
+        const model = await PIXI.live2d.Live2DModel.from("2D/【雪熊企划】雪熊少女/【雪熊企划】雪熊少女.model3.json");
         app.stage.addChild(model);
         ModelSetup.setLive2DMouseTracking(model, ENABLE_LIVE2D_MOUSE_TRACKING);
 
