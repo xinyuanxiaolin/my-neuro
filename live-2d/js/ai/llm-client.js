@@ -155,9 +155,6 @@ class LLMClient {
                     sanitizedAssistant.content = '';
                 }
                 // 去除历史记录中的 tool_calls 字段，避免某些后端/代理对该字段返回 400
-                if (sanitizedAssistant.tool_calls) {
-                    delete sanitizedAssistant.tool_calls;
-                }
                 return sanitizedAssistant;
             }
 
@@ -344,12 +341,16 @@ class LLMClient {
         let filtered = text;
 
         // 过滤 <think>...</think> 块（DeepSeek、部分 Gemini 格式）
-        filtered = filtered.replace(/<think>[\s\S]*?<\/think>/gi, '');
+        // 未闭合块也一并过滤，避免流式阶段把思考过程提前播出去
+        filtered = filtered.replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '');
 
         // 过滤 <thinking>...</thinking> 块
-        filtered = filtered.replace(/<thinking>[\s\S]*?<\/thinking>/gi, '');
+        filtered = filtered.replace(/<thinking>[\s\S]*?(?:<\/thinking>|$)/gi, '');
 
-        // 过滤 Gemini 中文思考格式：整段以"思考"开头（独占一行）的内容
+        // 过滤以“Thinking/思考/推理”作为单独标题行的前缀
+        filtered = filtered.replace(/^\s*(Thinking|Reasoning|思考|推理)\s*[:：-]?\s*(?:\r?\n)+/i, '');
+
+        // 过滤 Gemini 中文思考格式：整段以“思考”开头（独占一行）的内容
         // 仅在整段内容都是思考时才清除（避免误杀正常对话中的"思考"二字）
         if (/^思考\s*\n/.test(filtered)) {
             filtered = '';
@@ -361,6 +362,100 @@ class LLMClient {
         }
 
         return filtered.trim();
+    }
+
+    /**
+     * 创建流式思考内容过滤状态
+     * @private
+     * @returns {{rawContent: string, emittedContent: string}}
+     */
+    _createStreamingFilterState() {
+        return {
+            rawContent: '',
+            emittedContent: ''
+        };
+    }
+
+    /**
+     * 判断当前流式前缀是否需要暂缓输出，避免把未闭合的思考标记或标题行提前播报出去
+     * @private
+     * @param {{rawContent: string, emittedContent: string}} state
+     * @param {string} filteredContent
+     * @returns {boolean}
+     */
+    _shouldHoldStreamingOutput(state, filteredContent) {
+        if (filteredContent) return false;
+
+        const raw = (state.rawContent || '').trimStart();
+        if (!raw) return true;
+
+        // <think> / <thinking> 起始标记可能被切在多个 chunk 中，未完成前先不播
+        if (raw.startsWith('<') && !raw.includes('>') && raw.length <= 16) {
+            return true;
+        }
+
+        // 独立的思考标题行在换行前先不播，等后续 chunk 确认后再决定
+        if (/^(Thinking|Reasoning|思考|推理)\s*[:：-]?\s*$/i.test(raw)) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * 根据当前累计文本计算本轮可以安全输出的增量内容
+     * @private
+     * @param {string} deltaContent
+     * @param {{rawContent: string, emittedContent: string}} state
+     * @returns {string}
+     */
+    _filterStreamingDelta(deltaContent, state) {
+        if (!deltaContent) return '';
+
+        state.rawContent += deltaContent;
+        const filteredContent = this._filterThinkingContent(state.rawContent);
+
+        if (this._shouldHoldStreamingOutput(state, filteredContent)) {
+            return '';
+        }
+
+        if (filteredContent.startsWith(state.emittedContent)) {
+            const nextVisibleContent = filteredContent.slice(state.emittedContent.length);
+            state.emittedContent = filteredContent;
+            return nextVisibleContent;
+        }
+
+        // 理论上不会走到这里；兜底时回退到“最长公共前缀”差分，避免重复播报
+        let commonPrefixLength = 0;
+        const maxLength = Math.min(state.emittedContent.length, filteredContent.length);
+        while (
+            commonPrefixLength < maxLength &&
+            state.emittedContent[commonPrefixLength] === filteredContent[commonPrefixLength]
+        ) {
+            commonPrefixLength++;
+        }
+
+        const nextVisibleContent = filteredContent.slice(commonPrefixLength);
+        state.emittedContent = filteredContent;
+        return nextVisibleContent;
+    }
+
+    /**
+     * 在流式结束时冲刷剩余的可见内容
+     * @private
+     * @param {{rawContent: string, emittedContent: string}} state
+     * @returns {string}
+     */
+    _flushStreamingFilter(state) {
+        const finalFilteredContent = this._filterThinkingContent(state.rawContent);
+        if (!finalFilteredContent.startsWith(state.emittedContent)) {
+            state.emittedContent = finalFilteredContent;
+            return '';
+        }
+
+        const remainingContent = finalFilteredContent.slice(state.emittedContent.length);
+        state.emittedContent = finalFilteredContent;
+        return remainingContent;
     }
 
     /**
@@ -391,7 +486,7 @@ class LLMClient {
         const decoder = new TextDecoder('utf-8');
 
         let buffer = '';
-        let fullContent = '';
+        const streamFilterState = this._createStreamingFilterState();
         let toolCalls = null;
 
         try {
@@ -419,10 +514,17 @@ class LLMClient {
                             const delta = chunk.choices?.[0]?.delta;
                             if (!delta) continue;
 
+                            // 部分推理模型会把思考过程单独放在 reasoning_content 中，直接忽略即可
+                            if (delta.reasoning_content) {
+                                continue;
+                            }
+
                             // 处理文本内容
                             if (delta.content) {
-                                fullContent += delta.content;
-                                onChunk(delta.content); // 🔥 实时回调
+                                const visibleContent = this._filterStreamingDelta(delta.content, streamFilterState);
+                                if (visibleContent) {
+                                    onChunk(visibleContent); // 🔥 仅回调过滤后的可见文本
+                                }
                             }
 
                             // 处理工具调用
@@ -453,15 +555,15 @@ class LLMClient {
 
 //            logToTerminal('info', `✅ 流式响应接收完成`);
 
-            // 🔥 过滤思考内容（Gemini 等模型可能在流式 content 中混入思考过程）
-            if (fullContent) {
-                fullContent = this._filterThinkingContent(fullContent);
+            const remainingContent = this._flushStreamingFilter(streamFilterState);
+            if (remainingContent) {
+                onChunk(remainingContent);
             }
 
             // 构建完整的消息对象
             const message = {
                 role: 'assistant',
-                content: fullContent || null
+                content: streamFilterState.emittedContent || null
             };
 
             if (toolCalls && toolCalls.length > 0) {

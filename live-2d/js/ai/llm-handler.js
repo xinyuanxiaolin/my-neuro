@@ -713,9 +713,12 @@ class LLMHandler {
 
                     // 🔥 过滤最终回复中的思考内容
                     const filteredFinalContent = filterThinkingContent(finalResponseContent);
+                    const finalContentForDisplay = filteredFinalContent !== undefined && filteredFinalContent !== null
+                        ? filteredFinalContent
+                        : finalResponseContent;
 
                     // 触发插件 onLLMResponse 钩子（插件可修改 responseObj.text，影响 TTS 内容）
-                    const responseObj = { text: filteredFinalContent || finalResponseContent };
+                    const responseObj = { text: finalContentForDisplay };
                     if (global.pluginManager) {
                         await global.pluginManager.runLLMResponseHooks(responseObj).catch(() => {});
                     }

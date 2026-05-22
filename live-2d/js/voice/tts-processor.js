@@ -50,6 +50,16 @@ class EnhancedTextProcessor {
         this.startPlaybackThread();
     }
 
+    _sanitizeDisplayText(text) {
+        if (!text) return '';
+
+        return String(text)
+            .replace(/<think>[\s\S]*?(?:<\/think>|$)/gi, '')
+            .replace(/<thinking>[\s\S]*?(?:<\/thinking>|$)/gi, '')
+            .replace(/^\s*(Thinking|Reasoning|思考|推理)\s*[:：-]?\s*(?:\r?\n)+/i, '')
+            .trim();
+    }
+
     // 设置情绪映射器
     setEmotionMapper(emotionMapper) {
         this.playbackEngine.setEmotionMapper(emotionMapper);
@@ -251,7 +261,9 @@ class EnhancedTextProcessor {
     // 添加流式文本
     addStreamingText(text) {
         if (this.shouldStop) return;
-        this.llmFullResponse += text;
+        const sanitizedText = this._sanitizeDisplayText(text);
+        if (!sanitizedText) return;
+        this.llmFullResponse += sanitizedText;
 
         if (this.requestHandler.volcTtsEnabled) {
             // 字节流式路径：用 Promise 链保证 open → sendToken 严格串行
@@ -273,11 +285,11 @@ class EnhancedTextProcessor {
             // 每个 token 都追加在链尾，保证顺序
             const session = this.volcSession;
             this._volcChain = this._volcChain.then(() => {
-                if (session && !session.stopped) return session.sendToken(text);
+                if (session && !session.stopped) return session.sendToken(sanitizedText);
             }).catch((err) => console.error('字节TTS sendToken失败:', err));
         } else {
             // 原有分段路径
-            this.requestHandler.segmentStreamingText(text, this.textSegmentQueue);
+            this.requestHandler.segmentStreamingText(sanitizedText, this.textSegmentQueue);
         }
     }
 
@@ -286,7 +298,8 @@ class EnhancedTextProcessor {
         const chatMessages = document.getElementById('chat-messages');
         if (chatMessages) {
             const messageElement = document.createElement('div');
-            messageElement.innerHTML = `<strong>Fake Neuro:</strong> ${this.llmFullResponse}`;
+            const displayText = this._sanitizeDisplayText(this.llmFullResponse);
+            messageElement.innerHTML = `<strong>Fake Neuro:</strong> ${displayText}`;
             chatMessages.appendChild(messageElement);
             chatMessages.scrollTop = chatMessages.scrollHeight;
         }
@@ -303,11 +316,12 @@ class EnhancedTextProcessor {
 
     // 处理完整文本
     async processTextToSpeech(text) {
-        if (!text.trim()) return;
+        const sanitizedText = this._sanitizeDisplayText(text);
+        if (!sanitizedText) return;
 
         this.reset();
-        this.llmFullResponse = text;
-        this.requestHandler.segmentFullText(text, this.textSegmentQueue);
+        this.llmFullResponse = sanitizedText;
+        this.requestHandler.segmentFullText(sanitizedText, this.textSegmentQueue);
 
         // 🔥 创建完成Promise，返回给调用者等待
         this.completionPromise = new Promise(resolve => {

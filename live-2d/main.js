@@ -15,7 +15,7 @@ const configPath = path.join(app.getAppPath(), 'config.json');
 const ENABLE_OBS_WINDOW_CAPTURE = true;
 
 // Live2D模型优先级配置（Python程序会修改这个列表来切换模型）
-const priorityFolders = ['【雪熊企划】雪熊少女', '肥牛', 'Hiyouri', 'Default', 'Main'];
+const priorityFolders = ['【雪熊企划】雪熊少女', 'Hiyouri', 'Default', 'Main'];
 
 
 function ensureTopMost(win) {
