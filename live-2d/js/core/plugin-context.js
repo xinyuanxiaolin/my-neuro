@@ -168,10 +168,10 @@ class PluginContext {
      *     { type: 'image_url', image_url: { url: 'data:image/jpeg;base64,...', detail: 'low' } }
      *   ]
      */
-    async sendMessage(content) {
+    async sendMessage(content, options = {}) {
         const voiceChat = global.voiceChat;
         if (!voiceChat) return;
-        await voiceChat.sendToLLM(content);
+        await voiceChat.sendToLLM(content, options);
     }
 
     /**

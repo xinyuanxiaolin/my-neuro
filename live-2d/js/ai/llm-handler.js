@@ -63,9 +63,11 @@ class LLMHandler {
             });
         };
 
-        return async function(prompt) {
+        return async function(prompt, options = {}) {
             let hasRetriedWithoutImage = false; // 标志：是否已经重试过（避免无限循环）
             let isFirstAttempt = true; // 标志：是否是第一次尝试
+            const allowInterrupt = options.allowInterrupt !== false;
+            const waitForIdle = options.waitForIdle === true;
 
             // 🔥 外层重试循环：用于处理视觉不支持错误
             while (true) {
@@ -76,7 +78,7 @@ class LLMHandler {
                     }
 
                 // 检查是否正在播放TTS，如果是则先中断（仅第一次）
-                if (isFirstAttempt && appState.isPlayingTTS()) {
+                if (isFirstAttempt && allowInterrupt && appState.isPlayingTTS()) {
                     console.log('检测到TTS正在播放，执行打断操作');
                     logToTerminal('info', '检测到TTS正在播放，执行打断操作');
 
@@ -92,6 +94,14 @@ class LLMHandler {
 
                     // 等待短暂时间确保中断完成
                     await new Promise(resolve => setTimeout(resolve, 100));
+                }
+
+                if (isFirstAttempt && waitForIdle && appState.isPlayingTTS()) {
+                    let waitedMs = 0;
+                    while (appState.isPlayingTTS() && waitedMs < 30000) {
+                        await new Promise(resolve => setTimeout(resolve, 100));
+                        waitedMs += 100;
+                    }
                 }
 
                 // global.isProcessingUserInput 已通过事件自动管理，无需手动设置
